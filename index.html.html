@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>조이하우스 관리 프로그램</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1, h2 { text-align: center; }
+    nav { text-align: center; margin-bottom: 20px; }
+    nav button { margin: 0 5px; padding: 8px 12px; }
+    section { display: none; }
+    section.active { display: block; }
+    table { width: 90%; margin: 15px auto; border-collapse: collapse; }
+    table, th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background: #f4f4f4; text-align: center; }
+    td { text-align: center; }
+    button { margin-top: 5px; padding: 4px 8px; }
+  </style>
+</head>
+<body>
+  <h1>조이하우스 관리 프로그램</h1>
+  <nav>
+    <button onclick="showSection('tenants')">입주민 관리</button>
+    <button onclick="showSection('electricity')">전기세</button>
+    <button onclick="showSection('gas')">가스비</button>
+    <button onclick="showSection('water')">수도세</button>
+    <button onclick="showSection('total')">공과금 총괄</button>
+  </nav>
+
+  <!-- 입주민 관리 -->
+  <section id="tenants" class="active">
+    <h2>입주민 관리</h2>
+    <form onsubmit="addTenant(this); return false;">
+      <input name="branch" placeholder="지점" required>
+      <input name="name" placeholder="이름" required>
+      <input type="date" name="moveIn" required>
+      <input type="date" name="moveOut" required>
+      <input name="deposit" placeholder="보증금" required>
+      <input name="rent" placeholder="월세" required>
+      <button type="submit">추가</button>
+    </form>
+
+    <div id="branchButtons"></div>
+    <button onclick="renderTenantList(true)">현재 거주자만 보기</button>
+    <button onclick="renderTenantList(false)">전체 보기</button>
+    <button onclick="exportTenantsToExcel()">엑셀로 내보내기</button>
+
+    <table>
+      <thead>
+        <tr>
+          <th>지점</th><th>이름</th><th>입주일</th><th>퇴실예정일</th><th>보증금</th><th>월세</th><th>작업</th>
+        </tr>
+      </thead>
+      <tbody id="tenantTableBody"></tbody>
+    </table>
+  </section>
+
+  <!-- 전기세 -->
+  <section id="electricity">
+    <h2>전기세 배분</h2>
+    <form onsubmit="calculateBills(this, 'electricity'); return false;">
+      <label>총액: <input name="total" type="number" required></label>
+      <label>기간 시작: <input name="startDate" type="date" required></label>
+      <label>기간 종료: <input name="endDate" type="date" required></label>
+      <button type="submit">계산하기</button>
+    </form>
+
+    <table>
+      <thead>
+        <tr>
+          <th>지점</th><th>이름</th><th>거주일수</th><th>배분금액</th><th>계산식</th>
+        </tr>
+      </thead>
+      <tbody id="electricityTable"></tbody>
+    </table>
+  </section>
+
+  <!-- 가스비 -->
+  <section id="gas">
+    <h2>가스비 배분</h2>
+    <form onsubmit="calculateBills(this, 'gas'); return false;">
+      <label>총액: <input name="total" type="number" required></label>
+      <label>기간 시작: <input name="startDate" type="date" required></label>
+      <label>기간 종료: <input name="endDate" type="date" required></label>
+      <button type="submit">계산하기</button>
+    </form>
+
+    <table>
+      <thead>
+        <tr>
+          <th>지점</th><th>이름</th><th>거주일수</th><th>배분금액</th><th>계산식</th>
+        </tr>
+      </thead>
+      <tbody id="gasTable"></tbody>
+    </table>
+  </section>
+
+  <!-- 수도세 -->
+  <section id="water">
+    <h2>수도세 배분</h2>
+    <form onsubmit="calculateBills(this, 'water'); return false;">
+      <label>총액: <input name="total" type="number" required></label>
+      <label>기간 시작: <input name="startDate" type="date" required></label>
+      <label>기간 종료: <input name="endDate" type="date" required></label>
+      <button type="submit">계산하기</button>
+    </form>
+
+    <table>
+      <thead>
+        <tr>
+          <th>지점</th><th>이름</th><th>거주일수</th><th>배분금액</th><th>계산식</th>
+        </tr>
+      </thead>
+      <tbody id="waterTable"></tbody>
+    </table>
+  </section>
+
+  <!-- 총괄 -->
+  <section id="total">
+    <h2>공과금 총괄</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>지점</th><th>이름</th><th>전기세</th><th>가스비</th><th>수도세</th><th>총액</th>
+        </tr>
+      </thead>
+      <tbody id="totalTable"></tbody>
+    </table>
+  </section>
+
+  <script>
+    // 초기 샘플 데이터 추가
+    if (!localStorage.getItem("tenants")) {
+      const sampleTenants = [
+        { branch: "문정점", name: "홍길동", moveIn: "2025-09-01", moveOut: "2026-02-28", deposit: "1000000", rent: "500000" },
+        { branch: "성남점", name: "김철수", moveIn: "2025-08-15", moveOut: "2025-12-31", deposit: "800000", rent: "450000" },
+        { branch: "문정점", name: "이영희", moveIn: "2025-07-10", moveOut: "2025-11-30", deposit: "1200000", rent: "550000" }
+      ];
+      localStorage.setItem("tenants", JSON.stringify(sampleTenants));
+    }
+
+    function formatNumber(num) {
+      return Number(num).toLocaleString();
+    }
+
+    function showSection(id) {
+      document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+      if (id === 'tenants') renderTenantList();
+      if (id === 'total') renderTotal();
+    }
+
+    function getTenants() {
+      return JSON.parse(localStorage.getItem("tenants") || "[]");
+    }
+    function saveTenants(tenants) {
+      localStorage.setItem("tenants", JSON.stringify(tenants));
+    }
+
+    function addTenant(form) {
+      const tenant = {
+        branch: form.branch.value,
+        name: form.name.value,
+        moveIn: form.moveIn.value,
+        moveOut: form.moveOut.value,
+        deposit: form.deposit.value,
+        rent: form.rent.value
+      };
+      const tenants = getTenants();
+      tenants.push(tenant);
+      saveTenants(tenants);
+      alert("입주민이 추가되었습니다!");
+      form.reset();
+      renderTenantList();
+    }
+
+    function deleteTenant(index) {
+      let tenants = getTenants();
+      if (confirm("정말 삭제하시겠습니까?")) {
+        tenants.splice(index, 1);
+        saveTenants(tenants);
+        renderTenantList();
+      }
+    }
+
+    function editTenant(index) {
+      let tenants = getTenants();
+      let t = tenants[index];
+      const branch = prompt("지점:", t.branch);
+      const name = prompt("이름:", t.name);
+      const moveIn = prompt("입주일(YYYY-MM-DD):", t.moveIn);
+      const moveOut = prompt("퇴실예정일(YYYY-MM-DD):", t.moveOut);
+      const deposit = prompt("보증금:", t.deposit);
+      const rent = prompt("월세:", t.rent);
+      if (branch && name && moveIn && moveOut && deposit && rent) {
+        tenants[index] = { branch, name, moveIn, moveOut, deposit, rent };
+        saveTenants(tenants);
+        renderTenantList();
+      }
+    }
+
+    function renderTenantList(showCurrentOnly = false, branchFilter = null) {
+      const tenants = getTenants();
+      const tbody = document.getElementById("tenantTableBody");
+      if (!tbody) return;
+      tbody.innerHTML = "";
+
+      const today = new Date();
+      let branches = new Set();
+
+      tenants.forEach((t, index) => {
+        branches.add(t.branch);
+        const moveOutDate = new Date(t.moveOut);
+        const isCurrent = moveOutDate >= today;
+        if (showCurrentOnly && !isCurrent) return;
+        if (branchFilter && t.branch !== branchFilter) return;
+
+        tbody.innerHTML += `
+          <tr>
+            <td>${t.branch}</td>
+            <td>${t.name}</td>
+            <td>${t.moveIn}</td>
+            <td>${t.moveOut}</td>
+            <td>${formatNumber(t.deposit)}</td>
+            <td>${formatNumber(t.rent)}</td>
+            <td>
+              <button onclick="editTenant(${index})">수정</button>
+              <button onclick="deleteTenant(${index})">삭제</button>
+            </td>
+          </tr>`;
+      });
+
+      const branchDiv = document.getElementById("branchButtons");
+      branchDiv.innerHTML = "지점별 보기: ";
+      branches.forEach(b => {
+        branchDiv.innerHTML += `<button onclick=\"renderTenantList(false,'${b}')\">${b}</button>`;
+      });
+    }
+
+    function calculateBills(form, type) {
+      const total = parseFloat(form.total.value);
+      const tenants = getTenants();
+      const startDate = new Date(form.startDate.value);
+      const endDate = new Date(form.endDate.value);
+
+      let totalDays = 0;
+      const calcData = tenants.map(t => {
+        const moveIn = new Date(t.moveIn);
+        const moveOut = new Date(t.moveOut);
+        const activeStart = moveIn > startDate ? moveIn : startDate;
+        const activeEnd = moveOut < endDate ? moveOut : endDate;
+        let days = (activeEnd - activeStart) / (1000*60*60*24) + 1;
+        if (days < 0) days = 0;
+        totalDays += days;
+        return { ...t, days };
+      });
+
+      const results = calcData.map(t => {
+        const amount = totalDays > 0 ? (total * t.days / totalDays) : 0;
+        return { ...t, amount: parseFloat(amount.toFixed(0)) };
+      });
+
+      const tbody = document.getElementById(type+"Table");
+      tbody.innerHTML = "";
+      results.forEach(t => {
+        if (t.days > 0) {
+          tbody.innerHTML += `
+            <tr>
+              <td>${t.branch}</td>
+              <td>${t.name}</td>
+              <td>${t.days}</td>
+              <td>${formatNumber(t.amount)}</td>
+              <td>${formatNumber(total)} × ${t.days}/${totalDays} = ${formatNumber(t.amount)}</td>
+            </tr>`;
+        }
+      });
+
+      localStorage.setItem(type+"Bills", JSON.stringify(results));
+    }
+
+    function renderTotal() {
+      const tenants = getTenants();
+      const electricity = JSON.parse(localStorage.getItem("electricityBills")||"[]");
+      const gas = JSON.parse(localStorage.getItem("gasBills")||"[]");
+      const water = JSON.parse(localStorage.getItem("waterBills")||"[]");
+      const tbody = document.getElementById("totalTable");
+      tbody.innerHTML = "";
+
+      tenants.forEach(t => {
+        const e = electricity.find(x => x.name===t.name) || { amount: 0 };
+        const g = gas.find(x => x.name===t.name) || { amount: 0 };
+        const w = water.find(x => x.name===t.name) || { amount: 0 };
+        const total = e.amount + g.amount + w.amount;
+        tbody.innerHTML += `
+          <tr>
+            <td>${t.branch}</td>
+            <td>${t.name}</td>
+            <td>${formatNumber(e.amount)}</td>
+            <td>${formatNumber(g.amount)}</td>
+            <td>${formatNumber(w.amount)}</td>
+            <td>${formatNumber(total)}</td>
+          </tr>`;
+      });
+    }
+
+    function exportTenantsToExcel() {
+      const tenants = getTenants();
+      let csvContent = "지점,이름,입주일,퇴실예정일,보증금,월세\n";
+      tenants.forEach(t => {
+        csvContent += `${t.branch},${t.name},${t.moveIn},${t.moveOut},${t.deposit},${t.rent}\n`;
+      });
+      const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "tenants.csv";
+      link.click();
+    }
+  </script>
+</body>
+</html>
